@@ -1,0 +1,403 @@
+/* --- variables de la escena (valores base y “controles”) --- */
+:root {
+  --cursor-x: 50vw;      /* pos x de la linterna (pantalla) */
+  --cursor-y: 50vh;      /* pos y de la linterna */
+
+  /* linterna */
+  --flash-radius: 140px;  /* tamaño del circulo claro */
+  --flash-softness: 120px;/* borde difuso */
+  --veil-opacity: 0.96;   /* oscuridad fuera de la luz */
+
+  /* grano */
+  --noise-opacity: 0.12;  /* intensidad del efecto “grano” */
+
+  /* camara/parallax (se actualiza por JS en runtime) */
+  --cam-rot-x: 0deg;      /* inclinacion vertical */
+  --cam-rot-y: 0deg;      /* inclinacion horizontal */
+  --bg-x: 0px;            /* desplazamiento sutil en X */
+  --bg-y: 0px;            /* desplazamiento sutil en Y */
+
+  /* fondo del bosque (se cambia en cliente con bust de cache) */
+  --forest-url: url("/forest.jpg");
+
+  /* estilos de barra de carga */
+  --bar-bg: #0b0b0d;
+  --bar-border: #242428;
+  --bar-fill-a: #1c1c20;
+  --bar-fill-b: #2a2a30;
+  --bar-glow: 0 0 18px rgba(160, 255, 200, 0.06);
+}
+
+/* --- reseteos y base --- */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: #000; /* fondo negro constante */
+  color: #fff;
+  overflow: hidden; /* evita scroll durante la experiencia */
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* accesibilidad: solo para lectores de pantalla */
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0);
+  white-space: nowrap; border: 0;
+}
+
+/* --- contenedor principal de la escena --- */
+.scene {
+  background-color: #000; /* fallback si no carga la imagen */
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* fondo del bosque como capa fija con leve tilt/parallax.
+   aparece con fade cuando la imagen esta lista (data-bg-ready). */
+.scene::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  opacity: 0; /* se hace 1 cuando data-bg-ready=true */
+  background-image: var(--forest-url, url("/forest.jpg"));
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: calc(50% + var(--bg-x)) calc(50% + var(--bg-y));
+  transform: perspective(900px) rotateX(var(--cam-rot-x)) rotateY(var(--cam-rot-y)) scale(1.06);
+  transform-origin: 50% 50%;
+  will-change: transform, background-position, opacity; /* performance */
+  filter: brightness(0.65) contrast(1.06); /* look más oscuro/contrastado */
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+.scene[data-bg-ready="true"]::before {
+  opacity: 1;
+}
+
+/* capas visuales por encima del fondo */
+.vignette,
+.noise {
+  position: fixed;
+  inset: 0;
+  pointer-events: none; /* no bloquean interacciones */
+}
+.vignette { z-index: 5; } /* viñeta */
+.noise    { z-index: 6; } /* grano */
+.flashlight-overlay { z-index: 12; } /* linterna arriba de todo */
+
+/* linterna (sombreado radial en el cursor) */
+.flashlight-overlay {
+  contain: paint;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+  /* degrade radial: zona clara en el centro y oscuridad fuera */
+  background:
+    radial-gradient(
+      circle at var(--cursor-x) var(--cursor-y),
+      rgba(0, 0, 0, 0) 0,
+      rgba(0, 0, 0, 0) calc(var(--flash-radius) - 30px),
+      rgba(0, 0, 0, 0.25) var(--flash-radius),
+      rgba(0, 0, 0, 0.6) calc(var(--flash-radius) + var(--flash-softness) * 0.35),
+      rgba(0, 0, 0, var(--veil-opacity)) calc(var(--flash-radius) + var(--flash-softness))
+    );
+}
+
+/* pantalla de overlay loading / gate */
+.overlay-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  background-color: #000;
+  color: #e6e6e6;
+  text-align: center;
+  user-select: none;
+}
+
+/* pila para hacer crossfade entre capas */
+.overlay-stack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+/* capas apiladas con transiciones */
+.loading-layer,
+.gate-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  will-change: opacity, transform, filter;
+}
+
+/* loading: entra primero y luego desvanece */
+.loading-layer {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  transition: opacity 600ms ease, transform 600ms ease, filter 600ms ease;
+  pointer-events: none;
+}
+.loading-layer.is-fading {
+  opacity: 0;
+  transform: scale(0.985);
+  filter: blur(1.5px);
+}
+.loading-layer.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+
+/* gate: mensaje de “click anywhere to enter” */
+.gate-layer {
+  opacity: 0;
+  transform: translateY(6px);
+  filter: blur(1.5px);
+  transition: opacity 650ms ease, transform 650ms ease, filter 650ms ease;
+  pointer-events: none;
+}
+.gate-layer.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+  pointer-events: auto;
+}
+
+/* contenedores */
+.loading-wrap, .gate-wrap {
+  display: grid;
+  gap: 18px;
+  place-items: center;
+  padding: 24px;
+  margin: 0;
+}
+
+/* carga del titulo */
+.loading-title {
+  font-size: clamp(1.0rem, 2.4vw, 1.35rem);
+  letter-spacing: 0.02em;
+  opacity: 0.92;
+  text-shadow:
+    0 0 0 rgba(255,255,255,0.04),
+    0 0.5px 0 rgba(255,255,255,0.05);
+  margin-bottom: 10px;
+}
+
+/* loading bar */
+.myst-bar {
+  position: relative;
+  width: min(520px, 72vw);
+  height: 12px;
+  border: 1px solid var(--bar-border);
+  background: var(--bar-bg);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.02),
+    inset 0 10px 20px rgba(0,0,0,0.6),
+    var(--bar-glow);
+}
+.myst-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%; /* se anima con style width: `${progress}%` */
+  will-change: width;
+  background: linear-gradient(90deg, var(--bar-fill-a), var(--bar-fill-b), var(--bar-fill-a));
+  border-right: 1px solid rgba(180,255,220,0.12);
+  transition: width 110ms ease-out;
+}
+.myst-bar-sheen {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: screen; /* brillo suave encima */
+  opacity: 0.06;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(200,255,230,0.35) 0px,
+      rgba(200,255,230,0.35) 2px,
+      rgba(0,0,0,0) 6px,
+      rgba(0,0,0,0) 12px
+    );
+  animation: sheenShift 2.2s linear infinite; /* reflejo que se mueve */
+}
+@keyframes sheenShift {
+  from { transform: translateX(-30%); }
+  to   { transform: translateX(30%); }
+}
+.myst-bar-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.08; /* grano leve encima de la barra */
+  background-image:
+    url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>\
+  <filter id='n'>\
+    <feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/>\
+    <feColorMatrix type='saturate' values='0'/>\
+  </filter>\
+  <rect width='100%' height='100%' filter='url(%23n)' opacity='0.9'/>\
+</svg>");
+  background-size: 120px 120px;
+  animation: noiseShift 1.8s steps(6) infinite; /* parpadeo granular */
+}
+
+/* === Gate (pantalla de entrada) === */
+.gate-wrap { display: grid; gap: 8px; place-items: center; padding: 24px; }
+.gate-title {
+  font-size: clamp(1.1rem, 3vw, 1.8rem);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  opacity: 0.96;
+  position: relative;
+  padding-bottom: 6px;
+  animation: gatePulse 3.6s ease-in-out infinite; /* respiración sutil */
+  text-shadow:
+    0 0 0 rgba(255,255,255,0.05),
+    0 0.5px 0 rgba(255,255,255,0.05);
+}
+.gate-title::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  translate: -50% 0;
+  bottom: 0;
+  width: 0%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(180,255,220,0.25), transparent);
+  filter: drop-shadow(0 0 6px rgba(160,255,200,0.15));
+  animation: gateUnderline 2.8s ease-in-out infinite; /* subrayado que aparece/desaparece */
+}
+@keyframes gatePulse {
+  0%, 100% { opacity: 0.92; filter: blur(0); }
+  50%      { opacity: 0.75; filter: blur(0.25px); }
+}
+@keyframes gateUnderline {
+  0%   { width: 0%;   opacity: 0.0; }
+  30%  { width: 64%;  opacity: 0.45; }
+  60%  { width: 18%;  opacity: 0.15; }
+  100% { width: 0%;   opacity: 0.0; }
+}
+
+/* slides de la historia */
+.story-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 8vw 6vw;
+  background: radial-gradient(120% 120% at 50% 50%, #0b0b0bcc, #000000ee 60%, #000 100%);
+  color: #e8e8e8;
+  z-index: 9000;
+  user-select: none;
+  pointer-events: none; /* bloquea clics en el fondo */
+}
+.story-inner {
+  max-width: 60ch; /* ancho de lectura */
+  text-align: center;
+  line-height: 1.7;
+  font-size: clamp(1.05rem, 2.1vw, 1.35rem);
+  letter-spacing: 0.3px;
+  text-wrap: balance;
+  font-variant-ligatures: none;
+  text-rendering: optimizeLegibility;
+  pointer-events: auto;
+}
+
+/* Botones para mute/skip */
+.story-ui {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 10px;
+  z-index: 9200;
+  pointer-events: none;
+}
+.story-fab {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #0f0f0f;
+  border: 1px solid #2a2a2a;
+  color: #cfcfcf;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.03),
+    0 6px 18px rgba(0,0,0,0.45),
+    inset 0 0 0 1px rgba(255,255,255,0.02);
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, color 120ms ease;
+  outline: none;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.story-fab:hover { transform: translateY(-1px) scale(1.03); background: #141414; border-color: #3a3a3a; color: #e5e5e5; }
+.story-fab:active { transform: translateY(0) scale(0.98); }
+.story-fab:focus-visible {
+  box-shadow:
+    0 0 0 2px rgba(200,255,230,0.18),
+    0 0 0 4px rgba(200,255,230,0.08),
+    0 1px 0 rgba(255,255,255,0.03),
+    0 6px 18px rgba(0,0,0,0.45),
+    inset 0 0 0 1px rgba(255,255,255,0.02);
+  border-color: rgba(200,255,230,0.25);
+}
+.story-fab[aria-pressed="true"] { background: #0e0e0e; border-color: #3a3a3a; color: #9fbfb4; }
+
+/* transicion de prehistoria/blackout (pantalla negra) */
+.prestory-overlay {
+  position: fixed; inset: 0; z-index: 9990; background: #000;
+  opacity: 1; transition: opacity 600ms ease-out; pointer-events: auto;
+}
+.prestory-overlay.is-fading { opacity: 0; }
+
+.blackout {
+  will-change: opacity; position: fixed; inset: 0; background: #000;
+  z-index: 9999; pointer-events: none; opacity: 1; transition: opacity 450ms ease;
+}
+.blackout.is-fading { opacity: 0; }
+
+/* film grain */
+.noise {
+  will-change: transform;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--noise-opacity);
+  background-image:
+    url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>\
+  <filter id='n'>\
+    <feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/>\
+    <feColorMatrix type='saturate' values='0'/>\
+  </filter>\
+  <rect width='100%' height='100%' filter='url(%23n)' opacity='0.6'/>\
+</svg>");
+  background-size: 160px 160px;
+  animation: noiseShift 1.5s steps(6) infinite;
+  mix-blend-mode: overlay;
+}
+@keyframes noiseShift {
+  from { transform: translate(0,0); }
+  to   { transform: translate(-160px,-160px); }
+}
