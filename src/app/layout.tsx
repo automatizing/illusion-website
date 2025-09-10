@@ -1,7 +1,7 @@
 import "./globals.css";
 
 /* metadata: title / description */
-export const metadata = { title: "illusion", description: "Dark forest — flashlight cursor" };
+export const metadata = { title: "umbralis", description: "bnuuy dev haha" };
 
 /* layout
    - preload del fondo para reducir "flash" en la primer pintura.
