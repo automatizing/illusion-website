@@ -8,6 +8,33 @@ import { Special_Elite, IM_Fell_English } from "next/font/google";
 const typewriterFont = Special_Elite({ weight: "400", subsets: ["latin"] });
 const fellFont = IM_Fell_English({ weight: "400", subsets: ["latin"] });
 
+/* ================================
+   Hook de sonido ambiente del bosque
+   ================================ */
+function useForestAmbience() {
+  useEffect(() => {
+    const audio = new Audio("/audio/forest.mp3"); // coloca forest.mp3 en /public/audio/
+    audio.loop = true;
+    audio.volume = 0.2; // volumen bajo
+    audio.preload = "auto";
+
+    // intenta reproducir
+    audio.play().catch(() => {
+      // si autoplay falla, esperar un click del usuario
+      const resume = () => {
+        audio.play().catch(() => {});
+        document.removeEventListener("click", resume);
+      };
+      document.addEventListener("click", resume);
+    });
+
+    return () => {
+      audio.pause();
+      audio.src = "";
+    };
+  }, []);
+}
+
 /** Overlay permanente con carrusel de iconos (fade in/out garantizados) */
 function TeaserOverlay() {
   // Frases (rotan aparte, desincronizadas del icono)
@@ -33,49 +60,40 @@ function TeaserOverlay() {
 
   // Un único icono en el DOM
   const [iconIdx, setIconIdx] = useState<0 | 1>(0); // 0 = ?, 1 = pino
-  const [visible, setVisible] = useState(false);     // controla is-visible/is-hidden
+  const [visible, setVisible] = useState(false);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const timers = useRef<number[]>([]);
 
-  // Duraciones (deben “rimar” con las del CSS)
   const IN_MS = 800;
   const HOLD_MS = 1600;
   const OUT_MS = 800;
   const GAP_MS = 100;
 
-  // Limpia timers
   const clearTimers = () => {
     timers.current.forEach((t) => window.clearTimeout(t));
     timers.current = [];
   };
 
-  // Arranca / re-arranca un ciclo para el índice dado
   const runCycleFor = React.useCallback((idx: 0 | 1) => {
     clearTimers();
     setIconIdx(idx);
-    setVisible(false);            // base: hidden
+    setVisible(false);
 
-    // 1) Fade IN del icono (forzamos reflow + next frame para asegurar transición)
     timers.current.push(
       window.setTimeout(() => {
         const node = hostRef.current;
-        if (node) void node.offsetHeight; // reflow
+        if (node) void node.offsetHeight;
         requestAnimationFrame(() => setVisible(true));
       }, 16) as unknown as number
     );
 
-    // 2) Tras hold, inicia Fade OUT
     timers.current.push(
-      window.setTimeout(() => {
-        setVisible(false);
-      }, IN_MS + HOLD_MS) as unknown as number
+      window.setTimeout(() => setVisible(false), IN_MS + HOLD_MS) as unknown as number
     );
 
-    // 3) Al completar OUT, alterna al otro icono y repite
     timers.current.push(
       window.setTimeout(() => {
         const next = idx === 0 ? 1 : 0;
-        // pequeña pausa y comienza ciclo del siguiente
         timers.current.push(
           window.setTimeout(() => runCycleFor(next as 0 | 1), GAP_MS) as unknown as number
         );
@@ -83,13 +101,12 @@ function TeaserOverlay() {
     );
   }, []);
 
-  // Montaje: inicia en Question Mark
   useEffect(() => {
     runCycleFor(0);
     return clearTimers;
   }, [runCycleFor]);
 
-  // Texto: rotación desincronizada
+  // Texto rotatorio independiente
   const [phraseIdx, setPhraseIdx] = useState(0);
   const [phrasePhase, setPhrasePhase] = useState<"show" | "hide">("show");
   useEffect(() => {
@@ -140,7 +157,8 @@ function TeaserOverlay() {
 
 /** Página: overlay único cubriendo todo (sin salida) */
 export default function Page() {
-  // Precarga del fondo (mantiene tu look general)
+  useForestAmbience(); // ⬅️ Activa el audio ambiente
+
   useEffect(() => {
     const src = `/forest.jpg?v=${Date.now()}`;
     const img = new Image();
