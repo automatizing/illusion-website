@@ -1,7 +1,7 @@
 import "./globals.css";
 
 /* metadata: title / description */
-export const metadata = { title: "umbralis", description: "bnuuy dev haha" };
+export const metadata = { title: "umbralis", description: "Welcome to the forest" };
 
 /* layout
    - preload del fondo para reducir "flash" en la primer pintura.
