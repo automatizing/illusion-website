@@ -8,7 +8,7 @@ export const metadata = {
     title: "umbralis",
     description: "Welcome to the forest",
     url: "https://umbralis.fun", // 👈 pon tu dominio real aquí
-    siteName: "umbralis",
+    siteName: "umbralis.fun",
     images: [
       {
         url: "https://umbralis.fun/brand-logo.png", // 👈 imagen para el embed
