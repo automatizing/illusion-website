@@ -21,7 +21,7 @@ export default function Page() {
 
         {/* Texto debajo del logo */}
         <p className={`soon ${pixel.className}`}>
-          THIS WILL BE AN EXPERIENCE YOU WILL NEVER FORGET...
+          THIS WILL BE AN EXPERIENCE YOU WILL NEVER FORGET
         </p>
       </div>
 
